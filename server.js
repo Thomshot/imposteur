@@ -50,7 +50,7 @@ function normalize(s) {
 }
 
 function cleanName(name) {
-  return String(name || '').replace(/\s+/g, ' ').trim().slice(0, 20);
+  return String(name || '').replace(/\s+/g, ' ').trim().slice(0, 100);
 }
 
 function clampInt(v, min, max) {
@@ -409,7 +409,7 @@ io.on('connection', (socket) => {
 
   socket.on('chat', (text) => {
     if (!room || !player) return;
-    text = String(text || '').trim().slice(0, 300);
+    text = String(text || '').trim().slice(0, 2000);
     if (!text) return;
     if (room.phase !== 'lobby' && room.phase !== 'end' && !player.alive) {
       return fail('Tu es éliminé(e), tu ne peux plus écrire pendant la manche.');
