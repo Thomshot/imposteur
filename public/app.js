@@ -56,7 +56,7 @@ function playerName(id) {
 
 function avatarHtml(id, name, size = '') {
   const src = id === undefined ? myAvatar : avatars[id];
-  if (src) return `<img class="avatar ${size}" src="${src}" alt="">`;
+  if (src) return `<img class="avatar ${size}" src="${esc(src)}" alt="" referrerpolicy="no-referrer">`;
   let h = 0;
   for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360;
   const letter = esc((String(name).trim()[0] || '?').toUpperCase());
@@ -95,6 +95,27 @@ function renderAvatarPicker() {
   $('#avatar-preview').innerHTML = avatarHtml(undefined, $('#name').value || '?', 'lg');
   $('#btn-avatar-remove').classList.toggle('hidden', !myAvatar);
 }
+
+function setAvatarFromUrl() {
+  const raw = $('#avatar-url').value.trim();
+  if (!raw) return;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return toast('Ce lien n\'est pas valide.');
+  }
+  if (!/^https?:$/.test(url.protocol)) return toast('Le lien doit commencer par http:// ou https://');
+  const img = new Image();
+  img.onload = () => {
+    setMyAvatar(url.href);
+    $('#avatar-url').value = '';
+  };
+  img.onerror = () => toast('Aucune image trouvée à ce lien.');
+  img.src = url.href;
+}
+$('#btn-avatar-url').onclick = setAvatarFromUrl;
+$('#avatar-url').addEventListener('keydown', (e) => e.key === 'Enter' && setAvatarFromUrl());
 
 const pickAvatar = () => $('#avatar-file').click();
 $('#avatar-preview').onclick = pickAvatar;
@@ -230,16 +251,29 @@ function renderWordCard() {
     ? `<div class="label">Tu es</div><div class="word">🎩 Mr White</div><div class="role">Tu n'as pas de mot : écoute et bluffe !</div>`
     : `<div class="label">Ton mot</div><div class="word">${esc(me.word)}</div>${roleLine}`;
 
-  const visible = state.phase === 'reveal' || state.phase === 'end' || peeking;
-  if (visible) {
-    el.innerHTML = content + (peeking ? '<button class="small" id="btn-peek">Masquer</button>' : '');
-  } else {
-    el.innerHTML = `<div class="label">Ton mot est masqué</div><div class="masked">• • • • •</div>
-      <button class="small" id="btn-peek">👁️ Revoir mon mot</button>`;
+  if (state.phase === 'reveal' || state.phase === 'end') {
+    el.innerHTML = content;
+    return;
   }
+  // mot masqué : visible uniquement tant que le bouton est maintenu
+  el.innerHTML = `<div class="peek-content">${content}</div>
+    <div class="peek-mask"><div class="label">Ton mot est masqué</div><div class="masked">• • • • •</div></div>
+    <button class="small peek-btn" id="btn-peek">👁️ Maintenir pour voir mon mot</button>`;
+  el.classList.toggle('peeking', peeking);
   const peekBtn = $('#btn-peek');
-  if (peekBtn) peekBtn.onclick = () => { peeking = !peeking; renderWordCard(); };
+  peekBtn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    setPeeking(true);
+  });
+  peekBtn.addEventListener('contextmenu', (e) => e.preventDefault());
 }
+
+function setPeeking(on) {
+  peeking = on;
+  $('#word-card').classList.toggle('peeking', on);
+}
+for (const ev of ['pointerup', 'pointercancel', 'blur']) window.addEventListener(ev, () => peeking && setPeeking(false));
+document.addEventListener('visibilitychange', () => peeking && setPeeking(false));
 
 function renderGamePlayers() {
   const reveal = state.phase === 'end';

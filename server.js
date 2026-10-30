@@ -58,7 +58,15 @@ function cleanName(name) {
 
 function cleanAvatar(a) {
   if (typeof a !== 'string' || a.length > MAX_AVATAR_LENGTH) return null;
-  return /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(a) ? a : null;
+  if (/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(a)) return a;
+  // ou un lien vers une image
+  if (a.length > 2000) return null;
+  try {
+    const url = new URL(a);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+  } catch {
+    return null;
+  }
 }
 
 function clampInt(v, min, max) {

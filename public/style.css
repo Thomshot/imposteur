@@ -199,3 +199,12 @@ button.full, .narrow > button { width: 100%; margin-top: 12px; }
 .ranking li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ranking li.first { background: #3d3220; }
 .ranking-title { font-weight: 700; margin-top: 8px; }
+
+.avatar-url-row { margin-top: 10px; }
+.avatar-url-row input { padding: 8px 12px; font-size: .9rem; }
+
+.word-card .peek-content { display: none; }
+.word-card.peeking .peek-content { display: block; }
+.word-card.peeking .peek-mask { display: none; }
+.peek-btn { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.word-card.peeking .peek-btn { background: var(--accent); color: #fff; }
