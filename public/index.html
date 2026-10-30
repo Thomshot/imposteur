@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Imposteur</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕵️</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Accueil -->
+  <section id="screen-home" class="screen card narrow">
+    <h1>🕵️ Imposteur</h1>
+    <p class="muted">Trouve qui n'a pas le même mot que toi.</p>
+    <label for="name">Ton pseudo</label>
+    <input id="name" maxlength="20" placeholder="Ex : Thomas" autocomplete="off">
+    <button id="btn-create" class="primary">Créer une partie</button>
+    <div class="sep"><span>ou</span></div>
+    <label for="code">Code de la salle</label>
+    <div class="row">
+      <input id="code" maxlength="4" placeholder="ABCD" autocomplete="off" class="code-input">
+      <button id="btn-join">Rejoindre</button>
+    </div>
+    <details class="rules">
+      <summary>Règles</summary>
+      <ul>
+        <li>Les <b>civils</b> ont tous le même mot.</li>
+        <li>Les <b>imposteurs</b> ont un mot proche, mais différent.</li>
+        <li><b>Mr White</b> n'a aucun mot : il doit bluffer.</li>
+        <li>Chacun décrit son mot dans le chat, à tour de rôle, sans le dire.</li>
+        <li>Puis on vote pour éliminer un suspect.</li>
+        <li>Si Mr White est éliminé, il peut gagner en devinant le mot des civils.</li>
+        <li>Les civils gagnent s'ils éliminent tous les infiltrés. Les infiltrés gagnent s'ils sont aussi nombreux que les civils.</li>
+      </ul>
+    </details>
+  </section>
+
+  <!-- Salon -->
+  <section id="screen-lobby" class="screen card narrow hidden">
+    <div class="room-code">
+      <span class="muted">Code de la salle</span>
+      <strong id="lobby-code">----</strong>
+      <button id="btn-copy" class="small">Copier le lien</button>
+    </div>
+
+    <h2>Joueurs <span id="lobby-count" class="muted"></span></h2>
+    <ul id="lobby-players" class="players"></ul>
+
+    <h2>Réglages</h2>
+    <div id="settings">
+      <div class="setting">
+        <span>Imposteurs</span>
+        <div class="stepper" data-key="impostors">
+          <button data-d="-1">−</button><b>1</b><button data-d="1">+</button>
+        </div>
+      </div>
+      <div class="setting">
+        <span>Mr White</span>
+        <div class="stepper" data-key="mrWhite">
+          <button data-d="-1">−</button><b>0</b><button data-d="1">+</button>
+        </div>
+      </div>
+      <label class="setting check">
+        <span>Les imposteurs savent qu'ils sont imposteurs</span>
+        <input type="checkbox" id="impostors-know">
+      </label>
+      <p id="settings-summary" class="muted center"></p>
+    </div>
+
+    <button id="btn-start" class="primary">Lancer la manche</button>
+    <p id="lobby-wait" class="muted center">En attente que l'hôte lance la manche…</p>
+    <button id="btn-leave" class="ghost">Quitter la salle</button>
+  </section>
+
+  <!-- Partie -->
+  <section id="screen-game" class="screen hidden">
+    <div class="game">
+      <aside class="side card">
+        <div class="phase-bar">
+          <span id="phase-label"></span>
+          <span class="muted">Salle <b id="game-code"></b></span>
+        </div>
+
+        <div id="word-card" class="word-card"></div>
+
+        <h2>Joueurs</h2>
+        <ul id="game-players" class="players"></ul>
+
+        <div id="actions" class="actions"></div>
+        <button id="btn-leave-game" class="ghost small">Quitter</button>
+      </aside>
+
+      <main class="chat card">
+        <div id="messages" class="messages"></div>
+        <form id="chat-form" class="chat-form">
+          <input id="chat-input" maxlength="300" placeholder="Écris un message…" autocomplete="off">
+          <button class="primary">Envoyer</button>
+        </form>
+      </main>
+    </div>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
