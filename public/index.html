@@ -14,6 +14,14 @@
   <section id="screen-home" class="screen card narrow">
     <h1>🕵️ Imposteur</h1>
     <p class="muted">Trouve qui n'a pas le même mot que toi.</p>
+    <input type="file" id="avatar-file" accept="image/*" hidden>
+    <div class="avatar-picker">
+      <button id="avatar-preview" class="avatar-btn" title="Choisir une photo de profil"></button>
+      <div>
+        <button id="btn-avatar" class="small">Choisir une photo</button>
+        <button id="btn-avatar-remove" class="small ghost hidden">Retirer</button>
+      </div>
+    </div>
     <label for="name">Ton pseudo</label>
     <input id="name" autocomplete="off">
     <button id="btn-create" class="primary">Créer une partie</button>
@@ -33,6 +41,7 @@
         <li>Puis on vote pour éliminer un suspect.</li>
         <li>Si Mr White est éliminé, il peut gagner en devinant le mot des civils.</li>
         <li>Les civils gagnent s'ils éliminent tous les infiltrés. Les infiltrés gagnent s'ils sont aussi nombreux que les civils.</li>
+        <li>Points par manche : civils gagnants <b>+2</b>, imposteurs et Mr White gagnants <b>+4</b>, Mr White qui devine le mot <b>+6</b>. Classement à la fin des manches.</li>
       </ul>
     </details>
   </section>
@@ -50,6 +59,12 @@
 
     <h2>Réglages</h2>
     <div id="settings">
+      <div class="setting">
+        <span>Nombre de manches</span>
+        <div class="stepper" data-key="rounds">
+          <button data-d="-1">−</button><b>3</b><button data-d="1">+</button>
+        </div>
+      </div>
       <div class="setting">
         <span>Imposteurs</span>
         <div class="stepper" data-key="impostors">

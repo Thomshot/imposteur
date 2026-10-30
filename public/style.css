@@ -171,3 +171,31 @@ button.full, .narrow > button { width: 100%; margin-top: 12px; }
   .chat { height: 70dvh; }
   .narrow { margin: 8px auto; }
 }
+
+/* Avatars */
+.avatar {
+  width: 32px; height: 32px; flex: none; border-radius: 50%;
+  object-fit: cover; display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: .9rem; color: #fff; background: #444;
+}
+.avatar.lg { width: 84px; height: 84px; font-size: 2rem; }
+.avatar.sm { width: 26px; height: 26px; font-size: .75rem; }
+.avatar-picker { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 16px; }
+.avatar-picker > div { display: flex; flex-direction: column; gap: 6px; }
+.avatar-btn { padding: 0; border-radius: 50%; background: none; }
+.players li .avatar-btn .avatar { cursor: pointer; }
+.players li.dead .avatar { filter: grayscale(1); opacity: .6; }
+
+.msg-row { display: flex; gap: 8px; align-items: flex-end; max-width: 85%; align-self: flex-start; }
+.msg-row .msg { max-width: none; }
+.msg-row.mine { align-self: flex-end; flex-direction: row-reverse; }
+
+.tag.score { background: #2a2f4a; color: var(--text); font-weight: 700; }
+.tag.gain { background: #1f3b31; color: var(--ok); font-weight: 700; }
+
+.ranking { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.ranking li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--card-2); }
+.ranking li .pos { width: 28px; text-align: center; font-weight: 800; }
+.ranking li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ranking li.first { background: #3d3220; }
+.ranking-title { font-weight: 700; margin-top: 8px; }

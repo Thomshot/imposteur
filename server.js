@@ -10,10 +10,13 @@ const MAX_PLAYERS = 20;
 const MAX_MESSAGES = 300;
 const LOBBY_GRACE_MS = 30_000;
 const EMPTY_ROOM_TTL_MS = 10 * 60_000;
+const MAX_AVATAR_LENGTH = 300_000;
+// points gagnés à la fin d'une manche
+const POINTS = { civils: 2, infiltres: 4, white: 6 };
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { maxHttpBufferSize: 1e6 });
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/health', (req, res) => res.send('ok'));
@@ -53,6 +56,11 @@ function cleanName(name) {
   return String(name || '').replace(/\s+/g, ' ').trim().slice(0, 100);
 }
 
+function cleanAvatar(a) {
+  if (typeof a !== 'string' || a.length > MAX_AVATAR_LENGTH) return null;
+  return /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(a) ? a : null;
+}
+
 function clampInt(v, min, max) {
   const n = parseInt(v, 10);
   if (Number.isNaN(n)) return min;
@@ -66,7 +74,7 @@ function createRoom() {
     code: makeCode(),
     hostId: null,
     players: new Map(), // id -> player
-    settings: { impostors: 1, mrWhite: 0, impostorsKnow: false },
+    settings: { impostors: 1, mrWhite: 0, impostorsKnow: false, rounds: 3 },
     phase: 'lobby', // lobby | reveal | discussion | vote | whiteGuess | end
     messages: [],
     pair: null, // { civil, impostor }
@@ -76,13 +84,14 @@ function createRoom() {
     winner: null,
     whiteGuess: null,
     turn: 0,
+    round: 0,
     emptySince: null,
   };
   rooms.set(room.code, room);
   return room;
 }
 
-function addPlayer(room, name, token, socketId) {
+function addPlayer(room, name, token, socketId, avatar) {
   const player = {
     id: crypto.randomUUID(),
     token,
@@ -93,6 +102,9 @@ function addPlayer(room, name, token, socketId) {
     role: null, // civil | impostor | white
     word: null,
     vote: null,
+    avatar,
+    score: 0,
+    gained: 0,
     leaveTimer: null,
   };
   room.players.set(player.id, player);
@@ -175,6 +187,19 @@ function startGame(room) {
   io.to(room.code).emit('messages', []);
 }
 
+function startMatch(room) {
+  for (const p of room.players.values()) {
+    p.score = 0;
+    p.gained = 0;
+  }
+  room.round = 1;
+  startGame(room);
+}
+
+function isGameOver(room) {
+  return room.phase === 'end' && room.round >= room.settings.rounds;
+}
+
 function chooseStarter(room) {
   // Mr White ne commence jamais
   const candidates = [...room.players.values()].filter((p) => p.alive && p.role !== 'white');
@@ -197,6 +222,14 @@ function checkWinner(room) {
 function endGame(room, winner) {
   room.phase = 'end';
   room.winner = winner;
+  for (const p of room.players.values()) {
+    let pts = 0;
+    if (winner === 'civils' && p.role === 'civil') pts = POINTS.civils;
+    if (winner === 'infiltres' && p.role && p.role !== 'civil') pts = POINTS.infiltres;
+    if (winner === 'white' && room.whiteGuess?.playerId === p.id) pts = POINTS.white;
+    p.gained = pts;
+    p.score += pts;
+  }
 }
 
 function afterElimination(room) {
@@ -263,6 +296,8 @@ function publicState(room, me) {
     hasVoted: room.phase === 'vote' ? !!p.vote : false,
     role: reveal || (!p.alive && room.phase !== 'lobby') ? p.role : null,
     word: reveal ? p.word : null,
+    score: p.score,
+    gained: reveal ? p.gained : 0,
   }));
 
   let myRole = null;
@@ -291,6 +326,9 @@ function publicState(room, me) {
       ? { playerId: room.whiteGuess.playerId, guess: room.whiteGuess.guess ?? null, correct: room.whiteGuess.correct ?? null }
       : null,
     words: reveal ? room.pair : null,
+    round: room.round,
+    gameOver: isGameOver(room),
+    points: POINTS,
     wordCount: WORD_PAIRS.length,
   };
 }
@@ -319,19 +357,23 @@ io.on('connection', (socket) => {
     socket.join(r.code);
     socket.emit('joined', { code: r.code });
     socket.emit('messages', r.messages);
+    const avatars = {};
+    for (const x of r.players.values()) if (x.avatar) avatars[x.id] = x.avatar;
+    socket.emit('avatars', avatars);
+    socket.to(r.code).emit('avatar', { id: p.id, avatar: p.avatar });
     broadcast(r);
   }
 
-  socket.on('create', ({ name, token } = {}) => {
+  socket.on('create', ({ name, token, avatar } = {}) => {
     name = cleanName(name);
     if (!name) return fail('Choisis un pseudo.');
     if (!token) return fail('Session invalide, recharge la page.');
     const r = createRoom();
-    const p = addPlayer(r, name, String(token), socket.id);
+    const p = addPlayer(r, name, String(token), socket.id, cleanAvatar(avatar));
     attach(r, p);
   });
 
-  socket.on('join', ({ code, name, token } = {}) => {
+  socket.on('join', ({ code, name, token, avatar } = {}) => {
     code = String(code || '').toUpperCase().trim();
     const r = rooms.get(code);
     if (!r) return fail('Salle introuvable.');
@@ -342,6 +384,7 @@ io.on('connection', (socket) => {
     const existing = [...r.players.values()].find((p) => p.token === token);
     if (existing) {
       const wasDisconnected = !existing.connected;
+      if (avatar !== undefined) existing.avatar = cleanAvatar(avatar);
       attach(r, existing);
       if (wasDisconnected && r.phase !== 'lobby') {
         systemMessage(r, `${existing.name} est de retour.`);
@@ -356,7 +399,7 @@ io.on('connection', (socket) => {
     if ([...r.players.values()].some((p) => p.name.toLowerCase() === name.toLowerCase())) {
       return fail('Ce pseudo est déjà pris dans la salle.');
     }
-    const p = addPlayer(r, name, token, socket.id);
+    const p = addPlayer(r, name, token, socket.id, cleanAvatar(avatar));
     attach(r, p);
   });
 
@@ -384,20 +427,36 @@ io.on('connection', (socket) => {
       impostors: clampInt(s.impostors, 0, 9),
       mrWhite: clampInt(s.mrWhite, 0, 9),
       impostorsKnow: !!s.impostorsKnow,
+      rounds: clampInt(s.rounds, 1, 20),
     };
     broadcast(room);
   });
 
-  socket.on('start', () => {
+  socket.on('avatar', (avatar) => {
+    if (!room || !player) return;
+    player.avatar = cleanAvatar(avatar);
+    io.to(room.code).emit('avatar', { id: player.id, avatar: player.avatar });
+  });
+
+  // nouvelle partie (scores remis à zéro) ou manche suivante
+  socket.on('start', () => startRound(false));
+  socket.on('nextRound', () => startRound(true));
+
+  function startRound(next) {
     if (!room || player.id !== room.hostId) return;
-    if (room.phase !== 'lobby' && room.phase !== 'end') return;
+    if (next ? room.phase !== 'end' || isGameOver(room) : room.phase !== 'lobby' && !isGameOver(room)) return;
     // retire les joueurs déconnectés avant une nouvelle partie
     for (const p of [...room.players.values()]) if (!p.connected) removePlayer(room, p.id);
     const err = validateSettings(room.players.size, room.settings);
     if (err) return fail(err);
-    startGame(room);
+    if (next) {
+      room.round += 1;
+      startGame(room);
+    } else {
+      startMatch(room);
+    }
     broadcast(room);
-  });
+  }
 
   socket.on('hideWords', () => {
     if (!room || player.id !== room.hostId || room.phase !== 'reveal') return;
@@ -475,6 +534,7 @@ io.on('connection', (socket) => {
     room.lastResult = null;
     room.winner = null;
     room.whiteGuess = null;
+    room.round = 0;
     broadcast(room);
   });
 

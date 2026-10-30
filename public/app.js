@@ -28,6 +28,8 @@ let state = null;
 let messages = [];
 let currentRoom = storage('imposteur_room');
 let peeking = false;
+let avatars = {}; // id joueur -> photo
+let myAvatar = storage('imposteur_avatar');
 
 // ---------- utilitaires ----------
 
@@ -52,11 +54,70 @@ function playerName(id) {
   return state?.players.find((p) => p.id === id)?.name ?? '?';
 }
 
+function avatarHtml(id, name, size = '') {
+  const src = id === undefined ? myAvatar : avatars[id];
+  if (src) return `<img class="avatar ${size}" src="${src}" alt="">`;
+  let h = 0;
+  for (const c of String(name)) h = (h * 31 + c.charCodeAt(0)) % 360;
+  const letter = esc((String(name).trim()[0] || '?').toUpperCase());
+  return `<span class="avatar ${size}" style="background:hsl(${h} 45% 40%)">${letter}</span>`;
+}
+
+// ---------- photo de profil ----------
+
+function resizeImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const size = 160;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const side = Math.min(img.width, img.height);
+      canvas.getContext('2d').drawImage(
+        img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size,
+      );
+      URL.revokeObjectURL(img.src);
+      resolve(canvas.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => reject(new Error('Image illisible'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function setMyAvatar(dataUrl) {
+  myAvatar = dataUrl;
+  storage('imposteur_avatar', dataUrl);
+  renderAvatarPicker();
+  if (state) socket.emit('avatar', dataUrl);
+}
+
+function renderAvatarPicker() {
+  $('#avatar-preview').innerHTML = avatarHtml(undefined, $('#name').value || '?', 'lg');
+  $('#btn-avatar-remove').classList.toggle('hidden', !myAvatar);
+}
+
+const pickAvatar = () => $('#avatar-file').click();
+$('#avatar-preview').onclick = pickAvatar;
+$('#btn-avatar').onclick = pickAvatar;
+$('#btn-avatar-remove').onclick = () => setMyAvatar(null);
+$('#avatar-file').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    setMyAvatar(await resizeImage(file));
+  } catch {
+    toast('Impossible de lire cette image.');
+  }
+};
+
 // ---------- accueil ----------
 
 $('#name').value = storage('imposteur_name') || '';
 const urlCode = new URLSearchParams(location.search).get('code');
 if (urlCode) $('#code').value = urlCode.toUpperCase();
+$('#name').addEventListener('input', () => !myAvatar && renderAvatarPicker());
+renderAvatarPicker();
 
 function getName() {
   const name = $('#name').value.trim();
@@ -71,7 +132,7 @@ function getName() {
 
 $('#btn-create').onclick = () => {
   const name = getName();
-  if (name) socket.emit('create', { name, token });
+  if (name) socket.emit('create', { name, token, avatar: myAvatar });
 };
 
 $('#btn-join').onclick = () => {
@@ -79,7 +140,7 @@ $('#btn-join').onclick = () => {
   const code = $('#code').value.trim().toUpperCase();
   if (!name) return;
   if (code.length !== 4) return toast('Le code fait 4 lettres.');
-  socket.emit('join', { code, name, token });
+  socket.emit('join', { code, name, token, avatar: myAvatar });
 };
 $('#code').addEventListener('keydown', (e) => e.key === 'Enter' && $('#btn-join').click());
 $('#name').addEventListener('keydown', (e) => e.key === 'Enter' && ($('#code').value ? $('#btn-join') : $('#btn-create')).click());
@@ -90,6 +151,7 @@ function leave() {
   storage('imposteur_room', null);
   state = null;
   messages = [];
+  avatars = {};
   history.replaceState(null, '', location.pathname);
   show('home');
 }
@@ -127,10 +189,14 @@ function renderLobby() {
   $('#lobby-count').textContent = `(${state.players.length})`;
   $('#lobby-players').innerHTML = state.players.map((p) => `
     <li class="${p.id === state.meId ? 'me' : ''} ${p.connected ? '' : 'offline'}">
+      ${p.id === state.meId
+        ? `<button class="avatar-btn" data-pick title="Changer ma photo">${avatarHtml(p.id, p.name)}</button>`
+        : avatarHtml(p.id, p.name)}
       <span class="name">${esc(p.name)}${p.id === state.meId ? ' (toi)' : ''}</span>
       ${p.isHost ? '<span class="tag">👑 hôte</span>' : ''}
       ${p.connected ? '' : '<span class="tag">déconnecté</span>'}
     </li>`).join('');
+  $('#lobby-players [data-pick]')?.addEventListener('click', pickAvatar);
 
   const s = state.settings;
   document.querySelectorAll('.stepper').forEach((st) => {
@@ -142,7 +208,7 @@ function renderLobby() {
 
   const n = state.players.length;
   const civils = n - s.impostors - s.mrWhite;
-  let summary = `${civils} civil${civils > 1 ? 's' : ''}, ${s.impostors} imposteur${s.impostors > 1 ? 's' : ''}, ${s.mrWhite} Mr White`;
+  let summary = `${s.rounds} manche${s.rounds > 1 ? 's' : ''} · ${civils} civil${civils > 1 ? 's' : ''}, ${s.impostors} imposteur${s.impostors > 1 ? 's' : ''}, ${s.mrWhite} Mr White`;
   if (n < 3) summary += ' — il faut au moins 3 joueurs';
   else if (civils <= s.impostors + s.mrWhite) summary += ' — trop d\'infiltrés';
   $('#settings-summary').textContent = summary;
@@ -186,8 +252,10 @@ function renderGamePlayers() {
     if (p.hasVoted) tags.push('<span class="tag voted">a voté</span>');
     if (p.role) tags.push(`<span class="tag ${p.role}">${ROLE_LABELS[p.role]}${reveal && p.word ? ' · ' + esc(p.word) : ''}</span>`);
     if (!p.connected) tags.push('<span class="tag">hors ligne</span>');
+    if (p.gained) tags.push(`<span class="tag gain">+${p.gained}</span>`);
+    tags.push(`<span class="tag score">${p.score} pt${p.score > 1 ? 's' : ''}</span>`);
     return `<li class="${p.id === state.meId ? 'me' : ''} ${p.alive ? '' : 'dead'} ${p.connected ? '' : 'offline'}">
-      <span class="name">${p.alive ? '' : '💀 '}${esc(p.name)}</span>${tags.join('')}</li>`;
+      ${avatarHtml(p.id, p.name)}<span class="name">${p.alive ? '' : '💀 '}${esc(p.name)}</span>${tags.join('')}</li>`;
   }).join('');
 }
 
@@ -199,6 +267,20 @@ function lastResultHtml() {
     ? '<b>Dernier vote : égalité</b>, personne n\'est éliminé.'
     : `<b>${esc(r.eliminated.name)}</b> a été éliminé(e) (${ROLE_LABELS[r.eliminated.role]}).`;
   return `<div class="result">${head}${votes ? '<br><span class="muted">' + votes + '</span>' : ''}</div>`;
+}
+
+function rankingHtml() {
+  const sorted = [...state.players].sort((a, b) => b.score - a.score);
+  const medals = ['🥇', '🥈', '🥉'];
+  let pos = 0;
+  return '<ol class="ranking">' + sorted.map((p, i) => {
+    if (i === 0 || p.score !== sorted[i - 1].score) pos = i;
+    return `<li class="${pos === 0 && p.score > 0 ? 'first' : ''}">
+      <span class="pos">${medals[pos] || pos + 1}</span>${avatarHtml(p.id, p.name, 'sm')}
+      <span class="name">${esc(p.name)}</span>
+      ${p.gained ? `<span class="tag gain">+${p.gained}</span>` : ''}
+      <span class="tag score">${p.score} pt${p.score > 1 ? 's' : ''}</span></li>`;
+  }).join('') + '</ol>';
 }
 
 function renderActions() {
@@ -259,8 +341,14 @@ function renderActions() {
       if (state.whiteGuess?.guess) {
         html += `<div class="result">Mr White a proposé « ${esc(state.whiteGuess.guess)} »</div>`;
       }
-      if (host) {
-        html += '<button class="primary" data-act="start">Nouvelle manche</button>';
+      html += state.gameOver
+        ? '<div class="ranking-title">🏆 Classement final</div>'
+        : `<div class="ranking-title">Classement après la manche ${state.round}/${state.settings.rounds}</div>`;
+      html += rankingHtml();
+      if (host && !state.gameOver) {
+        html += `<button class="primary" data-act="nextRound">Manche suivante (${state.round + 1}/${state.settings.rounds})</button>`;
+      } else if (host) {
+        html += '<button class="primary" data-act="start">Rejouer (scores remis à zéro)</button>';
         html += '<button data-act="backToLobby">Retour au salon (réglages)</button>';
       } else {
         html += '<p class="muted center">En attente de l\'hôte…</p>';
@@ -284,7 +372,7 @@ function renderActions() {
 }
 
 function renderGame() {
-  $('#phase-label').textContent = PHASE_LABELS[state.phase] || '';
+  $('#phase-label').textContent = `Manche ${state.round}/${state.settings.rounds} · ${PHASE_LABELS[state.phase] || ''}`;
   $('#game-code').textContent = state.code;
   renderWordCard();
   renderGamePlayers();
@@ -301,7 +389,8 @@ function renderGame() {
 function messageHtml(m) {
   if (m.system) return `<div class="msg system">${esc(m.text)}</div>`;
   const mine = state && m.playerId === state.meId;
-  return `<div class="msg ${mine ? 'mine' : ''}"><span class="author">${esc(m.name)}</span>${esc(m.text)}</div>`;
+  return `<div class="msg-row ${mine ? 'mine' : ''}">${avatarHtml(m.playerId, m.name, 'sm')}
+    <div class="msg ${mine ? 'mine' : ''}"><span class="author">${esc(m.name)}</span>${esc(m.text)}</div></div>`;
 }
 
 function renderMessages() {
@@ -332,7 +421,7 @@ $('#chat-form').onsubmit = (e) => {
 // ---------- socket ----------
 
 socket.on('connect', () => {
-  if (currentRoom) socket.emit('join', { code: currentRoom, token, name: storage('imposteur_name') || '' });
+  if (currentRoom) socket.emit('join', { code: currentRoom, token, name: storage('imposteur_name') || '', avatar: myAvatar });
 });
 
 socket.on('joined', ({ code }) => {
@@ -363,6 +452,27 @@ socket.on('state', (s) => {
     renderGame();
     if (prevPhase === 'lobby' || !prevPhase) renderMessages();
   }
+});
+
+function rerender() {
+  if (!state) return;
+  if (state.phase === 'lobby') renderLobby();
+  else {
+    renderGamePlayers();
+    if (state.phase === 'end') renderActions();
+  }
+  renderMessages();
+}
+
+socket.on('avatars', (map) => {
+  avatars = map;
+  rerender();
+});
+
+socket.on('avatar', ({ id, avatar }) => {
+  if (avatar) avatars[id] = avatar;
+  else delete avatars[id];
+  rerender();
 });
 
 socket.on('messages', (list) => {
